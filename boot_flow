@@ -1,0 +1,1813 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * (C) Copyright 2010
+ * JEANUVS
+ *
+ * SAIKARTHIK J <saikarthik.j@jenauvs.com>
+ */
+Stage 0 — ROM Boot
+What ROM Does
+Power ON
+        │
+        ▼
+ROM code starts executing on MCU R5F
+from internal ROM memory address
+(hardcoded in silicon)
+        │
+        ▼
+1. Initialises basic clocks
+        │
+        ▼
+2. Enables DMSC/TIFS security controller
+        │
+        ▼
+3. Reads boot mode pins
+        │
+        ▼
+4. Selects boot device
+   (OSPI/eMMC/SD/USB/UART)
+        │
+        ▼
+5. Reads tiboot3.bin from boot device
+   offset 0x0
+        │
+        ▼
+6. Verifies CRC of tiboot3.bin
+        │
+        ▼
+7. Jumps to tiboot3.bin
+ROM Success — No output on UART
+ROM produces NO boot log output
+UART not yet initialised at ROM stage
+ROM Failure — No output
+ROM fails → complete silence
+no UART output at all
+board appears dead
+power LED may or may not glow
+
+STAGE 1 — tiboot3.bin (R5 SPL)
+What tiboot3.bin Does
+Runs on MCU R5F core
+from internal SRAM
+        │
+        ▼
+1. Initialises UART for console output
+   (first log messages appear here)
+        │
+        ▼
+2. Loads sysfw.itb from boot device
+        │
+        ▼
+3. Verifies sysfw.bin against TI MPK
+        │
+        ▼
+4. Sends sysfw.bin to DMSC
+   SYSFW starts running
+        │
+        ▼
+5. Sends board-cfg.bin to SYSFW
+   SYSFW validates board config
+        │
+        ▼
+6. Sends pm-cfg.bin → power domains
+   Sends rm-cfg.bin → resources
+   Sends sec-cfg.bin → security
+        │
+        ▼
+7. PMIC initialised over I2C
+   voltage rails come up
+        │
+        ▼
+8. DDR initialisation
+   DDR training
+   DDR read/write test
+        │
+        ▼
+9. Loads tispl.bin into DDR
+        │
+        ▼
+10. Releases A72 core
+    jumps to tispl.bin
+How Next Stage Identifies This Stage
+tiboot3.bin identifies itself by
+printing model and board info
+on UART immediately after
+UART init
+tiboot3.bin SUCCESS Log
+U-Boot SPL 2021.01-gea96725b (Aug 03 2023 - 15:43:32 +0000)
+        │
+        └── SPL version and build date
+             confirms tiboot3.bin started
+
+Model: BeagleBoard.org BeagleBone AI-64 R5
+        │
+        └── R5 = running on MCU R5F core
+             board model identified
+
+Board: BBONEAI-64-B0- rev B0
+        │
+        └── board ID read from EEPROM
+             successfully
+
+SYSFW ABI: 3.1 (firmware rev 0x0015 '21.9.1--v2021.09a (Terrific Lla)')
+        │
+        └── SYSFW loaded successfully
+             version confirmed
+             ABI version confirmed
+
+Trying to boot from MMC1
+        │
+        └── boot device selected
+             MMC1 = eMMC
+             loading next stage
+tiboot3.bin FAILURE Logs
+DDR Init Failure
+U-Boot SPL 2021.01 ...
+Model: BeagleBone AI-64 R5
+SYSFW ABI: 3.1 ...
+        │
+        ▼
+k3_ddrss_probe failed: -EINVAL
+DDR init failed
+        │
+        ▼
+### ERROR ### Please RESET the board ###
+        │
+        └── complete halt
+             wrong DDR config
+             or wrong board
+SYSFW Load Failure
+U-Boot SPL starts
+        │
+        ▼
+Loading SYSFW ...
+        │
+        ▼
+SYSFW load failed: -1
+        │
+        ▼
+### ERROR ### Please RESET the board ###
+EEPROM/Board ID Failure
+U-Boot SPL starts
+        │
+        ▼
+EEPROM not available at 0x50,
+trying to read at 0x51
+Reading on-board EEPROM at 0x51 failed
+        │
+        └── non critical
+             uses default board name
+             boot continues
+STAGE 2 — tispl.bin (A72 SPL)
+What tispl.bin Does
+Loaded into DDR by tiboot3.bin
+Runs on Cortex-A72 core
+        │
+        ▼
+1. ARM Trusted Firmware (BL31) starts
+   EL3 secure monitor setup
+        │
+        ▼
+2. OP-TEE loads (if enabled)
+   secure world setup
+        │
+        ▼
+3. Device Manager firmware loaded
+   to MCU R5F
+        │
+        ▼
+4. Board EEPROM read again
+   board revision confirmed
+        │
+        ▼
+5. Loads u-boot.img into DDR
+        │
+        ▼
+6. Jumps to U-Boot proper
+How This Stage Identifies Itself
+tispl.bin identifies itself through
+ARM Trusted Firmware banner
+printed immediately on A72 start
+tispl.bin SUCCESS Log
+Starting ATF on ARM64 core...
+        │
+        └── tispl.bin handed off to
+             ARM Trusted Firmware
+             A72 core started
+
+NOTICE: BL31: v2.5(release):0588523
+        │
+        └── TF-A version confirmed
+             running on A72
+
+NOTICE: BL31: Built: 17:13:47, Feb 16 2023
+        │
+        └── TF-A build date confirmed
+
+U-Boot SPL 2021.01-gea96725b (Feb 16 2023 - 17:13:47 +0000)
+        │
+        └── A72 SPL started
+             second SPL message
+             (this time on A72)
+
+Model: Texas Instruments K3 J721E SoC
+        │
+        └── SoC identified on A72
+
+Board: BBONEAI-64-B0- rev B0
+        │
+        └── board ID confirmed again
+             from EEPROM
+
+Trying to boot from MMC1
+        │
+        └── loading u-boot.img
+             from eMMC
+tispl.bin FAILURE Logs
+TF-A Failure
+Starting ATF on ARM64 core...
+        │
+        ▼
+ERROR: BL31: failed to initialize
+        │
+        ▼
+complete halt
+no further output
+DM Firmware Failure
+SPL: DM firmware load failed: -2
+        │
+        └── Device Manager firmware
+             missing or corrupt
+             boot may halt or
+             continue with limited
+             functionality
+
+STAGE 3 — U-Boot Proper
+What U-Boot Does
+Loaded into DDR by tispl.bin
+Full U-Boot running on A72
+MMU enabled
+        │
+        ▼
+1. Prints U-Boot banner
+        │
+        ▼
+2. Initialises all peripherals
+   MMC, Ethernet, USB, I2C
+        │
+        ▼
+3. Reads board EEPROM
+   final board identification
+        │
+        ▼
+4. Selects correct DTB
+   based on board ID
+        │
+        ▼
+5. Reads uEnv.txt or
+   extlinux.conf from
+   boot partition
+        │
+        ▼
+6. Loads kernel Image into DDR
+        │
+        ▼
+7. Loads DTB into DDR
+        │
+        ▼
+8. Loads initrd into DDR
+        │
+        ▼
+9. Sets kernel bootargs
+        │
+        ▼
+10. Jumps to kernel
+    booti command
+How This Stage Identifies Itself
+U-Boot identifies itself with
+full banner including:
+version, SoC, board, DRAM size
+U-Boot SUCCESS Log
+U-Boot 2021.01-gea96725b (Feb 16 2023 - 17:13:47 +0000)
+        │
+        └── U-Boot proper started
+             full version shown
+
+SoC:  J721E SR1.1 GP
+        │
+        └── SoC identified
+             SR1.1 = silicon revision
+             GP = General Purpose device
+
+Model: Texas Instruments K3 J721E SoC
+Board: BBONEAI-64-B0- rev B0
+        │
+        └── board confirmed
+
+DRAM:  4 GiB
+        │
+        └── DDR size detected
+             4GB confirmed working
+
+Flash: 0 Bytes
+        │
+        └── no NOR flash
+             on this board
+
+MMC:   sdhci04f80000: 0, sdhci04fb0000: 1
+        │
+        └── eMMC detected (0)
+             SD card detected (1)
+
+Loading Environment from FAT...
+*** Warning - bad CRC, using default environment
+        │
+        └── uEnv.txt CRC mismatch
+             non critical
+             uses defaults
+
+eth0: ethernet@45000000(port@01)
+        │
+        └── Ethernet detected
+
+name_fdt=[k3-j721e-beagleboneai64.dtb]
+        │
+        └── correct DTB selected
+             for AI-64 board
+
+switch to partitions #0, OK
+mmc1 is current device
+        │
+        └── SD card selected
+             as boot device
+
+Scanning mmc 1:1...
+Found /extlinux/extlinux.conf
+        │
+        └── boot config found
+             on SD card
+
+microSD Boot Options
+1: Recovery
+2: Linux microSD (Default)
+Enter choice: 2
+        │
+        └── boot menu shown
+             option 2 selected
+
+15427024 bytes read in 663 ms (22.2 MiB/s)
+Retrieving file: /Image
+        │
+        └── kernel loaded
+             into DDR
+
+23477376 bytes read in 1258 ms (23.3 MiB/s)
+Retrieving file: /initrd.img
+        │
+        └── initrd loaded
+             into DDR
+
+226992 bytes read in 18 ms (12 MiB/s)
+Retrieving file: /k3-j721e-beagleboneai64.dtb
+        │
+        └── DTB loaded into DDR
+
+## Flattened Device Tree blob at 88000000
+        │
+        └── DTB placed at
+             0x88000000 in DDR
+
+Loading Ramdisk to 8ffff5d0,
+end 8ffff5d0 ... OK
+        │
+        └── initrd placed in DDR
+
+Loading Device Tree to 00000008f148669
+end 00000008f148669 ... OK
+        │
+        └── DTB placed in DDR
+
+Starting kernel ...
+        │
+        └── U-Boot jumps to kernel
+             handoff complete
+U-Boot FAILURE Logs
+DTB Mismatch
+name_fdt=[k3-j721e-beagleboneai64.dtb]
+        │
+        ▼
+board_fit_config_name_match failed
+Wrong DTB for this board
+        │
+        ▼
+boot halts
+Kernel Not Found
+Scanning mmc 1:1...
+        │
+        ▼
+File not found: /Image
+        │
+        ▼
+** Bad device specification **
+        │
+        ▼
+BOOT: failed
+resetting ...
+MMC Init Failure
+MMC init failed
+        │
+        ▼
+No MMC device available
+        │
+        ▼
+Boot device not found
+halt
+
+STAGE 4 — Linux Kernel Boot
+What Kernel Does
+Loaded into DDR by U-Boot
+Starts executing at kernel
+entry point
+        │
+        ▼
+1. Kernel decompresses itself
+        │
+        ▼
+2. MMU setup
+   memory mapping
+        │
+        ▼
+3. earlycon UART init
+   first kernel messages
+        │
+        ▼
+4. SMP bringup
+   secondary A72 cores
+   released
+        │
+        ▼
+5. Device tree parsing
+   all peripheral nodes
+   read from DTB
+        │
+        ▼
+6. do_initcalls()
+   all drivers probe
+   against DTB nodes
+        │
+        ▼
+7. Power domain init
+   pm_genpd for each
+   peripheral
+        │
+        ▼
+8. Clock init
+   each peripheral clock
+   enabled
+        │
+        ▼
+9. Remoteproc firmware
+   loading
+   R5F and DSP cores
+   started
+        │
+        ▼
+10. Root filesystem mount
+        │
+        ▼
+11. init/systemd starts
+Kernel SUCCESS Log
+Starting kernel ...
+        │
+        └── U-Boot handed off
+
+0.710419 debugfs: Directory '31010000.pat'
+with parent 'regmap' already present
+        │
+        └── kernel debug filesystem
+             initialising
+             peripheral register maps
+             being created
+
+1.217410 a65-cpsw-nuss c000000.ethernet:
+error retrieving port phy: -19
+        │
+        └── Ethernet PHY not found
+             at this early stage
+             non critical
+             retried later
+
+3.148750 debugfs: Directory 'pd:26'
+with parent 'pm_genpd' already present
+        │
+        └── power domain 26
+             being initialised
+             for peripheral
+
+3.148616 pd:27 with parent pm_genpd
+3.164616 pd:242 with parent pm_genpd
+3.171923 pd:240 with parent pm_genpd
+3.175243 pd:239 with parent pm_genpd
+        │
+        └── each peripheral power
+             domain initialising
+             one by one from DTB
+
+7.935430 img_enc 4200000.video-encoder:
+vxe_enc_probe: using heap 1
+for internal alloc
+        │
+        └── video encoder found
+             driver probed
+             successfully
+
+8.079536 k3-dsp-rproc 4d81800000.dsp:
+configured DSP for remoteproc mode
+        │
+        └── C7x DSP core configured
+             firmware loading started
+
+8.117258 k3-dsp-rproc 64800000.dsp:
+configured DSP for remoteproc mode
+        │
+        └── second DSP configured
+Kernel FAILURE Logs
+Wrong DTB — Peripheral Not Found
+3.148750 platform device probe failed
+         peripheral not found
+         at expected address
+        │
+        └── DTB says peripheral
+             exists but hardware
+             not responding
+             non critical for
+             non essential peripherals
+             CRITICAL for MMC/eMMC
+Remoteproc Firmware Missing
+8.853254 remoteproc remoteproc16:
+request_firmware failed: -2
+        │
+        └── firmware file not found
+             in /lib/firmware/
+             remoteproc core
+             not started
+             non critical if
+             that core not needed
+Root Filesystem Mount Failure
+Kernel panic - not syncing:
+VFS: Unable to mount root fs
+on unknown-block(0,0)
+        │
+        └── CRITICAL failure
+             rootfs not found
+             complete halt
+             kernel panic
+
+STAGE 5 — Remote Core Boot
+What Remote Cores Do
+Linux kernel remoteproc
+framework loads firmware
+to each core
+        │
+        ├── DSP C7x cores
+        │    └── AI/ML acceleration
+        │
+        └── R5F cores
+             └── real time tasks
+                  IPC communication
+Remote Core SUCCESS Log
+8.178883 k3-dsp-rproc 4d81800000.dsp:
+booting DSP core using
+boot addr = 0xa9d3a000
+        │
+        └── DSP firmware loaded
+             core released from reset
+             booting at this address
+
+8.514819 k3-dsp-rproc 64800000.dsp:
+booting DSP core using
+boot addr = 0xaa200000
+        │
+        └── second DSP booting
+
+8.594472 platform 41000000.r5f:
+configured R5F for IPC-only mode
+        │
+        └── R5F configured for
+             IPC communication
+             with A72 Linux
+
+8.602808 platform 41000000.r5f:
+R5F core initialised in IPC-only mode
+        │
+        └── R5F fully started
+             IPC ready
+Remote Core FAILURE Log
+8.853254 remoteproc remoteproc16:
+request_firmware failed: -2
+        │
+        └── firmware file missing
+             from /lib/firmware/
+             non critical if
+             that specific core
+             not needed
+
+8.624972 remoteproc remoteproc17:
+request_firmware failed: -2
+        │
+        └── another core firmware
+             missing
+             
+STAGE 6 — systemd / Userspace
+What systemd Does
+PID 1 starts
+        │
+        ▼
+Reads unit files from
+/etc/systemd/system/
+        │
+        ▼
+Starts services in
+dependency order:
+        │
+        ├── Basic system init
+        ├── Filesystem mounts
+        ├── Network
+        ├── Hardware monitoring
+        ├── SSH server
+        ├── Docker
+        ├── BeagleBone services
+        └── Display Manager (XFCE)
+systemd SUCCESS Log
+OK Finished Create Volatile Files
+   and Directories
+        │
+        └── /tmp /run created
+
+OK Started Network Name Resolution
+        │
+        └── DNS working
+
+OK Reached target Network is Online
+        │
+        └── network fully up
+
+OK Started OpenSSH Secure Shell server
+        │
+        └── SSH available
+             remote login possible
+
+OK Started BeagleBoard.org EDGEAI K3 R5
+        │
+        └── BeagleBone AI
+             specific services up
+
+OK Reached target Multi-User System
+        │
+        └── all services started
+             system fully up
+systemd FAILURE Log
+[FAILED] Failed to start
+Light Display Manager
+        │
+        └── XFCE GUI failed
+             non critical
+             terminal still works
+             as seen in your log
+
+[FAILED] Failed to start
+OpenSSH Server Daemon
+        │
+        └── SSH not available
+             use UART terminal
+
+[FAILED] Failed to mount
+/media/data
+        │
+        └── partition not found
+             non critical if
+             not essential
+
+STAGE 7 — Login Prompt
+SUCCESS
+Debian GNU/Linux 11 BeagleBone-AI64 ttyS2
+        │
+        └── OS identified
+             Debian Bullseye
+             console on ttyS2
+
+BeagleBoard.org Debian Bullseye
+Xfce Image 2023-08-05
+        │
+        └── image version shown
+
+default username/password
+is [debian:temppwd]
+        │
+        └── default credentials shown
+
+BeagleBone-AI64 login:
+        │
+        └── BOOT COMPLETE
+             ready for login
+
+Complete Boot Stage Summary
+Stage          Binary          Log Identifier
+─────────────────────────────────────────────────────
+ROM          → (no output)   → silence
+tiboot3.bin  → R5 SPL        → "U-Boot SPL...R5"
+tispl.bin    → A72 SPL       → "Starting ATF"
+                               "NOTICE: BL31"
+                               "U-Boot SPL...A72"
+U-Boot       → u-boot.img    → "U-Boot 2021.01"
+                               "SoC: J721E SR1.1 GP"
+                               "DRAM: 4 GiB"
+Kernel       → Image         → "Starting kernel..."
+                               timestamp logs
+Remote cores → firmwares     → "booting DSP core"
+                               "R5F initialised"
+systemd      → init          → "OK Started..."
+                               "FAILED..."
+Login        → getty          → "login:"
+
+U-Boot Source
+    ↓
+tiboot3.bin
+tispl.bin
+u-boot.img
+
+--------------------------------
+
+board-cfg.yaml
+pm-cfg.yaml
+rm-cfg.yaml
+sec-cfg.yaml
+    ↓
+TI BoardCfg Generator
+    ↓
+board-cfg.bin
+pm-cfg.bin
+rm-cfg.bin
+sec-cfg.bin
+
+--------------------------------
+
+TI SYSFW Source (not public)
+    ↓
+sysfw.bin
+
+--------------------------------
+
+sysfw.bin
+board-cfg.bin
+pm-cfg.bin
+rm-cfg.bin
+sec-cfg.bin
+    ↓
+Binman / Image Generator
+    ↓
+sysfw.itb
+
+
+
+findmnt / and cat /sys/block/mmcblk1/device/type
+xzcat bbai64-debian-13.5-xfce-v6.12-arm64-2026-05-19-12gb.img.xz | sudo dd of=/dev/sdb bs=4M status=progress conv=fsync   (ai64 image flash command)
+ EVM uses ONLY GRUB/EFI
+        boot method, has ZERO
+        extlinux support
+                  │
+                  ▼
+        AI-64's U-Boot bootcmd
+        logic SPECIFICALLY looks
+        for extlinux.conf first
+        
+        
+The Scientist and Engineer's Guide to Digital Signal Processing" by Steven W. Smith. I
+1. radar sends a signal and hits object and returns
+2. that echoed signal is compared with current transmitting signal
+3. mixer does one analog beat signal
+4. filter applied on beat signal and resultant given to adc 
+5. using adc sampling, gets samples at each insant and does digital signal
+6. digital signal is given to fft to find beat frequency
+7. using beat frequency, can calculates distance
+8. likewise using every chirps, can calculate velocity
+
+
+
+FFT finds the beat frequency
+
+ADC samples
+
+↓
+
+FFT
+
+↓
+
+Peak
+
+80 MHz
+
+Now the DSP knows
+
+Beat Frequency
+
+=
+
+80 MHz
+Step 5: How does 80 MHz become 150 meters?
+
+This is the key idea.
+
+The beat frequency is proportional to the delay.
+
+The delay is proportional to the distance.
+
+So:
+
+Beat Frequency
+↓
+
+Time Delay
+
+↓
+
+Distance
+First calculate the chirp slope
+
+The radar already knows the chirp parameters because it generated the chirp.
+
+Bandwidth
+
+4 GHz
+
+Duration
+
+50 µs
+
+The chirp slope is
+
+Slope
+
+=
+
+4 GHz / 50 µs
+
+=
+
+80 MHz/µs
+
+This means:
+
+Every microsecond,
+
+the transmit frequency increases by
+80 MHz
+
+Now suppose the FFT reports
+
+80 MHz
+
+Ask yourself:
+
+How much time delay would create an 80 MHz difference?
+
+Since the chirp changes by 80 MHz every microsecond:
+
+80 MHz
+
+↓
+
+1 µs delay
+
+The radar has now recovered the propagation delay.
+
+Step 6: Convert delay into distance
+
+Radio waves travel at the speed of light.
+
+Approximately:
+
+300,000,000 m/s
+
+If the delay is
+
+1 µs
+
+the wave travels
+
+300 meters
+
+But remember:
+
+The signal went
+
+Radar
+
+↓
+
+Car
+
+↓
+
+Radar
+
+That's a round trip.
+
+So the object distance is
+
+300 / 2
+
+=
+
+150 meters
+Complete Flow
+Transmit Chirp
+      │
+      ▼
+Echo returns later
+      │
+      ▼
+Mixer
+      │
+      ▼
+Beat Signal
+      │
+      ▼
+ADC
+      │
+      ▼
+FFT
+      │
+      ▼
+Beat Frequency = 80 MHz
+      │
+      ▼
+Chirp Slope = 80 MHz/µs
+      │
+      ▼
+Delay = 1 µs
+      │
+      ▼
+Speed of Light
+      │
+      ▼
+Distance = 150 m
+Why does this work?
+
+Think of the chirp like a ruler.
+
+Instead of marking centimeters,
+
+it marks frequency.
+
+Time
+
+0 µs → 77.0 GHz
+
+1 µs → 77.08 GHz
+
+2 µs → 77.16 GHz
+
+3 µs → 77.24 GHz
+
+If the echo is delayed by 2 µs,
+
+the received frequency is simply the transmit frequency from 2 µs ago.
+
+The frequency difference directly tells you the time delay.
+
+Time delay tells you distance.
+
+In real radar DSP
+
+The DSP doesn't manually calculate every target.
+
+Before the radar starts operating, it already knows:
+
+Chirp bandwidth
+Chirp duration
+Chirp slope
+Speed of light
+
+So it creates a lookup or directly applies the conversion.
+
+For example:
+
+FFT Peak (Beat Frequency)	Distance
+10 MHz	18.75 m
+20 MHz	37.5 m
+40 MHz	75 m
+80 MHz	150 m
+
+(These numbers correspond to the example chirp slope of 80 MHz/µs.)
+
+The last missing piece
+
+You now understand:
+
+Chirp ✔
+Mixer ✔
+Beat signal ✔
+ADC ✔
+FFT ✔
+Beat frequency ✔
+Distance ✔
+
+The one thing you haven't seen mathematically is why the mixer output equals the frequency difference between the transmitted and received signals.
+
+That mixer operation is the bridge between the RF hardware and the DSP chain. Once you understand it, the entire FMCW radar pipeline becomes a connected story rather than a collection of separate blocks.
+
+Excellent. These are two fundamental radar questions.
+
+Question 1: What is chirp bandwidth?
+
+A chirp starts at one frequency and ends at another.
+
+For example:
+
+Start frequency
+
+77 GHz
+
+End frequency
+
+81 GHz
+
+The chirp bandwidth is simply:
+
+Bandwidth = End Frequency − Start Frequency
+
+So here,
+
+Bandwidth = 81 GHz − 77 GHz
+
+= 4 GHz
+
+Think of it like climbing stairs.
+
+Suppose you climb:
+
+Ground Floor
+
+↓
+
+4th Floor
+
+The difference is
+
+4 Floors
+
+Similarly,
+
+77 GHz
+
+↓
+
+81 GHz
+
+Difference = 4 GHz bandwidth.
+
+Frequency vs Time
+Frequency
+
+81 GHz |               /
+        |             /
+        |           /
+        |         /
+77 GHz  |_______/
+        +-----------------> Time
+
+The vertical distance is the bandwidth.
+
+Why is bandwidth important?
+
+The bandwidth determines how accurately the radar can distinguish two nearby objects.
+
+Suppose there are two cars.
+
+Radar
+
+↓
+
+Car A = 100.0 m
+
+Car B = 100.2 m
+
+If the bandwidth is very small, the radar may think they are one object.
+
+If the bandwidth is very large, the radar can separate them.
+
+The approximate relationship is:
+
+Larger bandwidth
+
+↓
+
+Better range resolution
+
+For example:
+
+100 MHz bandwidth → poorer distance resolution.
+4 GHz bandwidth → much finer distance resolution.
+
+So bandwidth is not just "how much the frequency changes." It directly affects how precisely you can separate objects that are close together.
+
+Question 2
+
+Is the FFT's high amplitude at a certain frequency considered a target?
+
+Almost.
+
+The answer is:
+
+A high FFT peak is a candidate target, but not automatically a confirmed target.
+
+Let's see why.
+
+Suppose the FFT output is
+
+Frequency      Amplitude
+
+20 MHz            3
+
+40 MHz            5
+
+80 MHz          120
+
+100 MHz           2
+
+Graphically:
+
+Amplitude
+
+120 |                 █
+100 |
+ 80 |
+ 60 |
+ 40 |
+ 20 |     █     █           █
+    +----------------------------
+      20   40   80   100 MHz
+
+The 80 MHz peak is much larger.
+
+That usually means:
+
+A strong reflection exists at the range corresponding to 80 MHz.
+
+But is it definitely a car?
+
+Not necessarily.
+
+It could be:
+
+A car ✔
+A truck ✔
+A road sign ✔
+A bridge ✔
+A strong reflection from another object ✔
+Sometimes even strong interference ✖
+
+The FFT itself does not know.
+
+It only says:
+
+"There is a lot of energy at 80 MHz."
+
+So what happens next?
+
+After the FFT:
+
+CFAR checks whether the peak is significantly above the surrounding noise.
+Doppler FFT checks whether it is moving or stationary.
+Angle estimation determines its direction.
+Tracking checks whether the object persists over multiple frames.
+
+Only after all these stages does the radar report something like:
+
+Target
+
+Distance = 150 m
+
+Speed = 72 km/h
+
+Angle = +8°
+Real Example
+
+Imagine one FFT result:
+
+Frequency      Amplitude
+
+20 MHz            2
+
+40 MHz            4
+
+80 MHz          150
+
+100 MHz           3
+
+The DSP converts:
+
+80 MHz
+
+↓
+
+150 meters
+
+Then Doppler processing might find:
+
+Speed = 60 km/h
+
+Angle processing might find:
+
+Left side of the lane
+
+Tracking confirms it appears in several consecutive frames.
+
+Now the radar confidently reports:
+
+Object
+
+150 meters
+
+60 km/h
+
+Lane: Left
+Complete Radar Decision Flow
+ADC Samples
+      │
+      ▼
+FFT
+      │
+      ▼
+Frequency Peaks
+      │
+      ▼
+Convert Frequency → Distance
+      │
+      ▼
+CFAR
+      │
+      ▼
+Possible Targets
+      │
+      ▼
+Doppler Processing
+      │
+      ▼
+Velocity
+      │
+      ▼
+Angle Estimation
+      │
+      ▼
+Tracking
+      │
+      ▼
+Confirmed Objects
+One small correction to your understanding
+
+You said:
+
+"FFT's high amplitude at a certain frequency is considered as target?"
+
+A more precise statement is:
+
+A peak in the FFT indicates a strong reflection at a particular beat frequency. That beat frequency is converted into a range. It becomes a candidate target, and then additional processing (CFAR, Doppler, angle estimation, and tracking) decides whether it is a real object or just noise or clutter.
+
+This distinction is important because not every strong FFT peak corresponds to a real target. Radar DSP uses several stages to reject false detections before reporting an object.
+
+generally noise frequency is much lower than actual target frequency?
+
+This is a very good question.
+
+The answer is:
+
+No. Noise is NOT generally lower in frequency than the target.
+
+This is one of the biggest misconceptions in DSP.
+
+Let's understand why.
+
+Suppose your target produces
+Beat Frequency = 80 MHz
+
+Now suppose there is noise.
+
+Can the noise be
+
+5 MHz
+
+Yes.
+
+Can it be
+
+80 MHz
+
+Yes.
+
+Can it be
+
+100 MHz
+
+Yes.
+
+Can it exist over all frequencies?
+
+Yes.
+
+Example 1: Thermal Noise
+
+Every electronic component produces thermal noise.
+
+Its spectrum looks roughly like this:
+
+Amplitude
+
+ ^
+ |
+ |████████████████████████████████
+ +----------------------------------> Frequency
+
+Notice:
+
+The noise exists at almost every frequency.
+
+It doesn't say,
+
+"I'll stay below 10 MHz."
+
+Example 2: Radar Beat Signal
+
+Suppose your FFT looks like this.
+
+Amplitude
+
+120 |                     █
+100 |                     █
+ 80 |                     █
+ 60 |
+ 40 |    █  █   █ █   █
+ 20 | █  █ ██ █ ███ ██ █ █
+    +-------------------------------->
+      10 20 30 40 50 60 70 80 90 MHz
+
+The large peak at
+
+80 MHz
+
+is probably a target.
+
+But notice:
+
+Noise is also present at
+
+10 MHz
+20 MHz
+35 MHz
+50 MHz
+75 MHz
+even near 80 MHz
+
+The noise is spread across many frequencies.
+
+Why doesn't the radar mistake all of it as targets?
+
+Because of amplitude, not frequency.
+
+Suppose
+
+Frequency	Amplitude
+20 MHz	3
+40 MHz	2
+60 MHz	4
+80 MHz	120
+
+The radar says:
+
+The 80 MHz peak is much stronger than the surrounding noise.
+
+So it's likely a target.
+
+What if noise at 80 MHz is also large?
+
+Excellent question.
+
+Suppose
+
+80 MHz Target = 15
+
+80 MHz Noise = 20
+
+Now the total measured amplitude is
+
+35
+
+The radar cannot separate them just by looking at one FFT bin.
+
+This is why radar uses:
+
+CFAR
+Multiple chirps
+Doppler processing
+Tracking
+
+These algorithms help distinguish a persistent target from random noise.
+
+When does frequency filtering work?
+
+Sometimes the useful signal occupies a different frequency band than the noise.
+
+Example:
+
+ECG:
+
+Useful Signal
+
+0–150 Hz
+
+Power-line interference:
+
+50 Hz
+
+High-frequency electronic noise:
+
+10 kHz
+
+In this case:
+
+A notch filter removes 50 Hz.
+A low-pass filter removes frequencies above 150 Hz.
+
+Filtering works because you already know where the useful signal should be.
+
+But radar is different
+
+Suppose a car can be anywhere between:
+
+0 MHz
+
+↓
+
+8 MHz
+
+Any beat frequency in that range could represent a real target.
+
+Therefore you cannot simply say:
+
+"Everything below 2 MHz is noise."
+
+A car close to the radar might produce a beat frequency below 2 MHz.
+
+A distant car might produce a beat frequency near 8 MHz.
+
+So frequency alone is not enough to distinguish targets from noise.
+
+Real Radar Thinking
+
+The radar asks questions like:
+
+Is this FFT peak much stronger than nearby bins?
+Does this peak appear in multiple chirps?
+Does it have a consistent Doppler shift?
+Does it appear in consecutive radar frames?
+Is it coming from a physically plausible direction?
+
+Only after combining all this information does it decide:
+
+"This is a real object."
+
+Summary
+Statement	True or False
+Noise is always lower frequency than the target	❌ False
+Noise can exist at the same frequency as the target	✅ True
+Noise can exist over a wide range of frequencies	✅ True
+A large FFT peak is automatically a target	❌ False
+Radar uses amplitude, Doppler, CFAR, and tracking to separate targets from noise	✅ True
+Here's the key idea to remember
+
+The FFT only answers one question:
+
+"How much energy exists at each frequency?"
+
+It does not answer:
+
+Is this a car?
+Is this rain?
+Is this electronic noise?
+Is this a reflection from a road sign?
+
+Those decisions are made after the FFT by higher-level radar algorithms such as CFAR, Doppler processing, angle estimation, and tracking. That's why the FFT is an analysis tool, not a target detector.
+
+how much energy exists at each frequency is called as beat frequency and each chirp does same thing right , goes from radar antenna, travels hits object then reflcets back to receiver antenna?
+
+Excellent! You're almost connecting the whole radar pipeline. There is one small misunderstanding that we need to fix.
+
+You said:
+
+"How much energy exists at each frequency is called beat frequency?"
+
+Not exactly.
+
+The correct statement is:
+
+The beat frequency is the frequency of the beat signal.
+
+The FFT tells us how much energy (or amplitude) exists at each beat frequency.
+
+These are different things.
+
+Imagine One Car
+
+Suppose there is only one car.
+
+After the mixer and low-pass filter, the beat signal is
+
+80 MHz sine wave
+
+ADC samples it.
+
+FFT result:
+
+Frequency      Amplitude
+
+80 MHz            120
+
+Here:
+
+80 MHz = Beat frequency
+120 = Strength (amplitude/energy) at that beat frequency
+
+So the FFT output has two pieces of information.
+
+FFT Output	Meaning
+Frequency	Beat frequency
+Amplitude	Strength of the echo at that frequency
+Imagine Three Cars
+
+Car A
+
+20 MHz
+
+Car B
+
+40 MHz
+
+Car C
+
+80 MHz
+
+The beat signal is actually
+
+20 MHz
+
++
+
+40 MHz
+
++
+
+80 MHz
+
+The FFT gives
+
+Frequency      Amplitude
+
+20 MHz            30
+
+40 MHz            60
+
+80 MHz           150
+
+Notice:
+
+There are three beat frequencies.
+
+The FFT is saying:
+
+"I found three frequencies, and here is how strong each one is."
+
+What does the amplitude mean?
+
+Suppose
+
+80 MHz → Amplitude = 150
+
+This usually means
+
+The echo corresponding to the object at that range is strong.
+
+A larger amplitude can result from:
+
+A larger object (truck vs motorcycle)
+A better reflecting material (metal vs plastic)
+A closer object (often, though not always)
+A more favorable angle
+
+But amplitude alone does not tell you the distance.
+
+The frequency tells you the distance.
+
+The amplitude tells you how strong the reflection is.
+
+Your Second Question
+
+"Each chirp does the same thing, right?"
+
+Yes! Exactly.
+
+Every chirp follows the same path.
+
+Radar TX Antenna
+        │
+        ▼
+Transmit Chirp
+        │
+        ▼
+Object
+        │
+        ▼
+Echo
+        │
+        ▼
+RX Antenna
+        │
+        ▼
+Mixer
+        │
+        ▼
+Low-Pass Filter
+        │
+        ▼
+ADC
+        │
+        ▼
+FFT
+
+Then the next chirp starts.
+
+Again:
+
+Radar TX Antenna
+        │
+        ▼
+Transmit Chirp
+        │
+        ▼
+Object
+        │
+        ▼
+Echo
+        │
+        ▼
+RX Antenna
+
+The process repeats.
+
+Then why send many chirps?
+
+This is the interesting part.
+
+Suppose the object is stationary.
+
+Chirp 1
+
+80 MHz
+
+Chirp 2
+
+80 MHz
+
+Chirp 3
+
+80 MHz
+
+Almost identical.
+
+Now suppose the object is moving.
+
+Chirp 1
+
+80.000 MHz
+
+Chirp 2
+
+80.002 MHz
+
+Chirp 3
+
+80.004 MHz
+
+or, more accurately in FMCW radar, the phase of the 80 MHz beat signal changes from chirp to chirp due to the Doppler effect.
+
+The radar analyzes these changes across multiple chirps to estimate the object's velocity.
+
+So:
+
+One chirp → Range (distance)
+Many chirps → Velocity (speed)
+The complete picture
+
+For each chirp:
+
+TX Chirp
+   │
+   ▼
+Echo
+   │
+   ▼
+Mixer
+   │
+   ▼
+Beat Signal
+   │
+   ▼
+ADC
+   │
+   ▼
+Range FFT
+
+After 128 chirps:
+
+Range FFT Results
+        │
+        ▼
+Compare Across Chirps
+        │
+        ▼
+Doppler FFT
+        │
+        ▼
+Velocity
+One small correction
+
+I wrote above that a moving object might produce beat frequencies like:
+
+80.000 MHz
+80.002 MHz
+80.004 MHz
+
+That's useful for building intuition, but in a real FMCW radar the beat frequency for a moving target is often nearly the same from chirp to chirp. The main quantity that changes consistently is the phase of the beat signal, and the Doppler FFT uses those phase changes to estimate velocity.
+
+So a more accurate summary is:
+
+Range FFT (within one chirp) → Finds the beat frequencies and converts them to distance.
+Doppler FFT (across many chirps) → Uses the evolution of the beat signal (primarily its phase) across chirps to determine speed.
+
+You're now only a couple of concepts away from understanding the complete FMCW radar signal-processing chain used in automotive radars.
+
+
+
+DSP flow:
+--------------
+
+ADC -> DC Removal -> Window(hamming) -> FFT -> 2DFFT -> coherent integration -> CFAR 
+
+DC removal:
+-------------
+DC Removal does removing DC component from adc samples by averaging all the samples and with resultant, subtract each sample. The resultant samples are fed to windowing 
+
+Window(hamming):
+-----------------
+
+by choosing fft size and window technique, can get window values using formula representing in array.
+
+with adc samples multiplying window values gives resultant samples
+
+the resultant samples then fed to FFT
+
+eg: ADC samples are 5, 3, 7, 6, 5,-3, -7, -6, 5, when noticing last sample with first sample -6 to 5 is huge jump and fft considers as frequency change
+that jump can be reduced with windowing and suppress spectral leakage and brings high resolution
+
+FFT:
+-------
+FFT does finding peak value(amplitude) and frequency
+
+say if beat frequency is 4.5Mhz and adc sampling rate 20Mhz and fft size is 1024
+ frequency resolution is adc sampling rate/fft size then 19.53khz
+ 
+lets says bin 0 = 0hz, bin 1 = 19.53khz, bin 2 = 39.06khz and so on..
+
+Magnitude = root(real_square + imaginary_square)
+
+phase = tan_inverse(imaginary/real)
+
+
+in ai64:
+--------------
+bootfs:
+extlinux, overlays, services, ti, fsck0000.REC, ID.txt, image.gz, initrd.img, sysconf.txt, sysfw.itb, tiboot3.bin, tispl.bin, u-boot.img
+rootfs:
+boot-> firmware(empty)
+
+in evm:
+-------------
+bootfs:
+sysfw.itb, tiboot3.bin, tispl.bin, uboot.img, uenv.txt
+
+in rootfs:
+boot -> dtb, efi(boot-> grub.cfg), fitimage, image
+
+
+
